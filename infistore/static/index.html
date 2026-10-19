@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>infistore</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f5f5f5;color:#111;font-family:Inter,system-ui,sans-serif}
+header{padding:28px 40px;border-bottom:1px solid #ddd;background:#fff}
+header h1{margin:0;font-size:26px}
+header p{margin:5px 0 0;color:#777}
+main{max-width:1100px;margin:40px auto;padding:0 20px}
+.upload{background:#fff;border:2px dashed #ccc;border-radius:18px;padding:45px;text-align:center}
+.upload.dragging{border-color:#111;background:#fafafa}
+.upload input{display:none}
+button{background:#111;color:#fff;border:0;padding:11px 17px;border-radius:9px;cursor:pointer}
+.files{margin-top:35px;background:#fff;border-radius:18px;overflow:hidden}
+.toolbar{padding:18px 22px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;color:#777;font-size:14px}
+.file{display:flex;align-items:center;gap:18px;padding:18px 22px;border-bottom:1px solid #eee}
+.file:last-child{border-bottom:0}
+.icon{width:42px;height:42px;border-radius:10px;background:#eee;display:flex;align-items:center;justify-content:center;font-size:11px}
+.info{flex:1;min-width:0}
+.name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.meta{color:#888;font-size:13px;margin-top:4px}
+.actions{display:flex;gap:8px}
+.actions button{background:#eee;color:#111}
+.actions .delete{color:#c00}
+#progress{margin-top:15px;color:#777}
+</style>
+</head>
+<body>
+<header>
+<h1>infistore</h1>
+<p>Telegram-powered personal cloud storage</p>
+</header>
+
+<main>
+<div class="upload" id="dropzone">
+<input type="file" id="fileInput" multiple>
+<p>Drop files here</p>
+<p>or</p>
+<button onclick="fileInput.click()">Select files</button>
+<div id="progress"></div>
+</div>
+
+<div class="files">
+<div class="toolbar">
+<span id="count">Loading...</span>
+<span>Index stored in Telegram</span>
+</div>
+<div id="fileList"></div>
+</div>
+</main>
+
+<script>
+const fileInput=document.getElementById("fileInput");
+const dropzone=document.getElementById("dropzone");
+const fileList=document.getElementById("fileList");
+const progress=document.getElementById("progress");
+const count=document.getElementById("count");
+
+fileInput.addEventListener("change",()=>uploadFiles([...fileInput.files]));
+
+dropzone.addEventListener("dragover",e=>{
+    e.preventDefault();
+    dropzone.classList.add("dragging");
+});
+
+dropzone.addEventListener("dragleave",()=>{
+    dropzone.classList.remove("dragging");
+});
+
+dropzone.addEventListener("drop",e=>{
+    e.preventDefault();
+    dropzone.classList.remove("dragging");
+    uploadFiles([...e.dataTransfer.files]);
+});
+
+async function uploadFiles(files){
+    for(const file of files){
+        progress.textContent=`Uploading ${file.name}...`;
+
+        const form=new FormData();
+        form.append("file",file);
+
+        try{
+            const response=await fetch("/api/upload",{
+                method:"POST",
+                body:form
+            });
+
+            if(!response.ok) throw new Error();
+        }catch(error){
+            alert(`Failed to upload ${file.name}`);
+        }
+    }
+
+    progress.textContent="";
+    loadFiles();
+}
+
+async function loadFiles(){
+    const response=await fetch("/api/files");
+    const files=await response.json();
+
+    count.textContent=`${files.length} file${files.length===1?"":"s"}`;
+
+    if(!files.length){
+        fileList.innerHTML='<div style="padding:40px;text-align:center;color:#888">No files yet.</div>';
+        return;
+    }
+
+    fileList.innerHTML=files.slice().reverse().map(file=>`
+        <div class="file">
+            <div class="icon">FILE</div>
+
+            <div class="info">
+                <div class="name">${escapeHtml(file.name)}</div>
+                <div class="meta">
+                    ${formatBytes(file.size)}
+                    ·
+                    ${new Date(file.uploaded_at).toLocaleString()}
+                </div>
+            </div>
+
+            <div class="actions">
+                <button onclick="downloadFile('${file.id}')">Download</button>
+                <button class="delete" onclick="removeFile('${file.id}')">Delete</button>
+            </div>
+        </div>
+    `).join("");
+}
+
+function downloadFile(id){
+    window.location.href=`/api/download/${encodeURIComponent(id)}`;
+}
+
+async function removeFile(id){
+    if(!confirm("Delete this file from Telegram?")) return;
+
+    const response=await fetch(
+        `/api/files/${encodeURIComponent(id)}`,
+        {method:"DELETE"}
+    );
+
+    if(!response.ok){
+        alert("Delete failed");
+        return;
+    }
+
+    loadFiles();
+}
+
+function formatBytes(bytes){
+    if(bytes===0) return "0 B";
+
+    const units=["B","KB","MB","GB","TB","PB"];
+    const i=Math.floor(Math.log(bytes)/Math.log(1024));
+
+    return `${(bytes/Math.pow(1024,i)).toFixed(2)} ${units[i]}`;
+}
+
+function escapeHtml(text){
+    const div=document.createElement("div");
+    div.textContent=text;
+    return div.innerHTML;
+}
+
+loadFiles();
+</script>
+</body>
+</html>

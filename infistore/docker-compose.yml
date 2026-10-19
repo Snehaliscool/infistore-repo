@@ -1,0 +1,16 @@
+services:
+  infistore:
+    build: .
+    container_name: infistore
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - infistore_session:/app/session
+      - infistore_tmp:/tmp/infistore
+
+volumes:
+  infistore_session:
+  infistore_tmp:
